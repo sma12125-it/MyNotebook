@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-natural: #FDFCF9;
+    --bg-sand: #F5F2EB;
+    --bg-card: #FFFFFF;
+    --bg-tint: #F1F3EF;
+    --bg-ivory: #FAF9F5;
+    --border-sand: #E5E0D5;
+    --border-card: #F0EBE0;
+    --color-sage: #7C9070;
+    --color-sage-hover: #6B7D60;
+    --color-forest: #2D3A29;
+    --color-olive: #4A5D45;
+    --color-terracotta: #E5B58E;
+    --color-clay: #D97B7B;
+    --color-text-main: #3C3C3B;
+    --color-text-muted: #8A8A87;
+  }
+
+  .dark {
+    --bg-natural: #161D15;
+    --bg-sand: #1C241B;
+    --bg-card: #212B1F;
+    --bg-tint: #1F291E;
+    --bg-ivory: #1E271D;
+    --border-sand: #2C3A2A;
+    --border-card: #2D3B2C;
+    --color-sage: #8DA480;
+    --color-sage-hover: #7C9070;
+    --color-forest: #E5EFE2;
+    --color-olive: #A8BCA2;
+    --color-terracotta: #E5B58E;
+    --color-clay: #E29494;
+    --color-text-main: #E2E8DF;
+    --color-text-muted: #9BA598;
+  }
+
+  body {
+    background-color: var(--bg-natural);
+    color: var(--color-text-main);
+  }
+}
+
+/* Custom Natural Tones scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(124, 144, 112, 0.3);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(124, 144, 112, 0.5);
+}
+

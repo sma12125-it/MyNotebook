@@ -1,0 +1,21 @@
+{
+  "name": "دفتر من - مدیریت زندگی و سلامت",
+  "short_name": "دفتر من",
+  "description": "سامانه جامع و ساده مدیریت سلامت، داروها، آزمایش‌ها، یادآوری‌ها و رویدادهای مهم زندگی شخصی",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#0f172a",
+  "orientation": "portrait-primary",
+  "dir": "rtl",
+  "lang": "fa",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["lifestyle", "medical", "productivity"]
+}
