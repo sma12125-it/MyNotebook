@@ -1,60 +1,66 @@
 // AI & Voice Services for دفتر من (MyLifeOS)
-import { getTodayJalali } from '../utils/jalali';
+import { getTodayJalali, getCurrentTime, toFaDigits } from '../utils/jalali';
 import { StorageService } from './storage';
-import { UserProfile } from '../types';
+import { UserProfile, AppState } from '../types';
+import { LocalAIEngine, LocalExtractionResult } from './localAiEngine';
 
-export interface ExtractionResult {
-  summary?: string;
-  category?: string;
-  topic?: string;
-  measurements?: Array<{
-    type: string;
-    value: number;
-    unit: string;
-    notes?: string;
-  }>;
-  medication?: {
-    name?: string;
-    dosage?: string;
-    form?: string;
-    frequency?: string;
-    times?: string[];
-    notes?: string;
-  };
-  medicalVisit?: {
-    doctorName?: string;
-    specialty?: string;
-    reason?: string;
-    diagnosis?: string;
-    followUpDate?: string;
-    prescriptions?: string[];
-  };
-  reminder?: {
-    title?: string;
-    dueDate?: string;
-    dueTime?: string;
-    category?: string;
-  };
-  lifeEvent?: {
-    title?: string;
-    category?: string;
-    cost?: number;
-    description?: string;
-  };
-  note?: {
-    text?: string;
-  };
-}
+export interface ExtractionResult extends LocalExtractionResult {}
 
 export class AIService {
   // Extract structured record from Persian sentence
   static async extractRecord(text: string): Promise<ExtractionResult> {
+    // 1. Try local extraction first for immediate zero-latency output
+    const localResult = LocalAIEngine.extractRecordLocally(text);
+
     try {
+      const customKey = StorageService.getCustomApiKey();
       const response = await fetch('/api/ai/extract', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(customKey ? { 'x-gemini-api-key': customKey } : {}),
+        },
         body: JSON.stringify({
           text,
+          customApiKey: customKey || undefined,
+          currentDate: getTodayJalali(),
+        }),
+      });
+
+      if (!response.ok) {
+        return localResult;
+      }
+
+      const resJson = await response.json();
+      return resJson.data || localResult;
+    } catch (error) {
+      console.warn('AI extraction fallback to local engine:', error);
+      return localResult;
+    }
+  }
+
+  // Audio Transcribe & Extract
+  static async transcribeAudio(audioBlob: Blob): Promise<{ transcript?: string; data?: ExtractionResult }> {
+    try {
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve, reject) => {
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+      });
+      reader.readAsDataURL(audioBlob);
+      const audioBase64 = await base64Promise;
+
+      const customKey = StorageService.getCustomApiKey();
+      const response = await fetch('/api/ai/audio-transcribe', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(customKey ? { 'x-gemini-api-key': customKey } : {}),
+        },
+        body: JSON.stringify({
+          audioBase64,
+          customApiKey: customKey || undefined,
+          mimeType: audioBlob.type || 'audio/webm',
           currentDate: getTodayJalali(),
         }),
       });
@@ -63,83 +69,139 @@ export class AIService {
         throw new Error(`Server error: ${response.status}`);
       }
 
-      const resJson = await response.json();
-      return resJson.data || {};
-    } catch (error) {
-      console.warn('AI extraction fallback:', error);
-      return {
-        summary: text,
-        note: { text },
-        category: 'note',
-      };
+      return await response.json();
+    } catch (err) {
+      console.error('Audio transcribe error:', err);
+      throw err;
     }
   }
 
-  // Ask AI a question about stored user records
+  // Ask AI with full user context and instant Local Engine fallback
   static async askQuestion(question: string): Promise<string> {
+    const state: AppState = StorageService.getAllState();
+
     try {
-      // Gather relevant user context
-      const profile: Partial<UserProfile> = StorageService.getProfile() || { id: 'user-default', name: 'کاربر' };
-      const medications = (StorageService.getMedications() || []).filter((m) => m?.isActive);
-      const measurements = (StorageService.getMeasurements() || []).slice(0, 10);
-      const reminders = (StorageService.getReminders() || []).filter((r) => !r?.isCompleted);
-      const visits = (StorageService.getVisits() || []).slice(0, 5);
-      const labs = (StorageService.getLabs() || []).slice(0, 5);
-      const events = (StorageService.getEvents() || []).slice(0, 5);
+      const profile: Partial<UserProfile> = state.profile || { id: 'user-default', name: 'کاربر' };
+      const today = getTodayJalali();
+
+      const waterLogs = (state.vitals || []).filter(
+        (m) => m?.type === 'water_intake'
+      );
+      const todayWaterLogs = waterLogs.filter((m) => m?.recordedAtJalali === today);
+      const totalWaterTodayMl = todayWaterLogs.reduce((acc, cur) => acc + (cur.value || 0), 0);
 
       const userContext = {
         name: profile?.name || profile?.fullName || 'کاربر',
-        birthDate: profile?.birthDateJalali,
+        birthDate: profile?.birthDateJalali || profile?.birthYearJalali,
         bloodGroup: profile?.bloodGroup || profile?.bloodType,
+        heightCm: profile?.heightCm,
+        weightKg: profile?.weightKg,
         allergies: profile?.allergies || [],
         medicalConditions: profile?.medicalConditions || [],
-        currentMedications: medications.map((m) => `${m?.name || ''} (${m?.dosage || ''}) - مصرف: ${m?.frequency || ''}`),
-        recentMeasurements: measurements.map((m) => `${m?.type || ''}: ${m?.value || ''} ${m?.unit || ''} در تاریخ ${m?.recordedAtJalali || ''}`),
-        activeReminders: reminders.map((r) => `${r?.title || ''} برای تاریخ ${r?.dueDateJalali || ''}`),
-        recentVisits: visits.map((v) => `${v?.doctorName || ''} (${v?.specialty || ''}) در ${v?.dateJalali || ''} - علت: ${v?.reason || ''}`),
-        recentLabs: labs.map((l) => `${l?.testName || ''} در تاریخ ${l?.dateJalali || ''}`),
-        recentEvents: events.map((e) => `${e?.title || ''} (${e?.category || ''}) در ${e?.dateJalali || ''}`),
+        notes: profile?.notes,
+        waterToday: [
+          `مجموع آب امروز: ${toFaDigits(totalWaterTodayMl.toString())} میلی‌لیتر (حدود ${toFaDigits(Math.round(totalWaterTodayMl / 250).toString())} لیوان)`,
+          ...todayWaterLogs.map(
+            (w) => `${toFaDigits(w.value.toString())} میلی‌لیتر در ساعت ${w.time || w.recordedTime || ''} (${w.notes || 'مصرف آب'})`
+          ),
+        ],
+        currentMedications: (state.medications || []).map(
+          (m) => `${m.name} (${m.dosage || ''}) - زمان: ${m.frequency || ''} ${m.instructions ? `- نحوه: ${m.instructions}` : ''} - باقیمانده: ${m.remainingQuantity || 0}`
+        ),
+        recentMeasurements: (state.vitals || []).slice(0, 15).map(
+          (m) => `${m.type}: ${toFaDigits(m.value.toString())} ${m.unit} در تاریخ ${m.recordedAtJalali || ''} ${m.time ? `ساعت ${m.time}` : ''} (${m.notes || ''})`
+        ),
+        recentVisits: (state.visits || []).slice(0, 8).map(
+          (v) => `${v.doctorName || ''} (${v.specialty || ''}) در تاریخ ${v.dateJalali || ''} - علت: ${v.reason || ''} - تشخیص: ${v.diagnosis || ''} - توصیه: ${v.instructions || ''}`
+        ),
+        recentLabs: (state.labs || []).slice(0, 8).map(
+          (l) => `${l.testName} در تاریخ ${l.dateJalali} - آزمایشگاه: ${l.laboratoryName || ''} - نتیجه: ${l.summary || ''}`
+        ),
+        activeReminders: (state.reminders || []).filter((r) => !r.isCompleted).map(
+          (r) => `${r.title} برای موعد ${r.dueDateJalali || ''} ساعت ${r.time || r.dueTime || ''} (${r.category || ''})`
+        ),
+        recentEvents: (state.events || []).slice(0, 10).map(
+          (e) => `${e.title} (${e.category || ''}) در تاریخ ${e.dateJalali || ''} ${e.cost ? `- مبلغ: ${toFaDigits(e.cost.toLocaleString('fa-IR'))} تومان` : ''} - توضیحات: ${e.description || ''}`
+        ),
+        journalEntries: (state.journal || []).slice(0, 5).map(
+          (j) => `${j.title} در ${j.dateJalali} - ${j.content}`
+        ),
       };
 
+      const customKey = StorageService.getCustomApiKey();
       const response = await fetch('/api/ai/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(customKey ? { 'x-gemini-api-key': customKey } : {}),
+        },
         body: JSON.stringify({
           question,
+          customApiKey: customKey || undefined,
           userContext,
         }),
       });
 
-      if (!response.ok) {
-        throw new Error(`Server returned status ${response.status}`);
+      const data = await response.json().catch(() => ({}));
+      if (data && data.answer) {
+        return data.answer;
       }
 
-      const data = await response.json();
-      return data.answer || 'پاسخی از دستیار دریافت نشد.';
+      // If server returned non-ok, use local engine
+      return LocalAIEngine.answerQuestion(question, state);
     } catch (err) {
-      console.error('AI chat error:', err);
-      return 'خطا در برقراری ارتباط با دستیار هوشمند. لطفاً اتصال اینترنت خود را بررسی نمایید.';
+      console.warn('AI chat falling back to local engine:', err);
+      return LocalAIEngine.answerQuestion(question, state);
     }
   }
 
   // Summarize records
   static async summarizeRecords(type: string, records: any[]): Promise<string> {
     try {
+      const customKey = StorageService.getCustomApiKey();
       const response = await fetch('/api/ai/summarize', {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(customKey ? { 'x-gemini-api-key': customKey } : {}),
+        },
+        body: JSON.stringify({
+          type,
+          records,
+          customApiKey: customKey || undefined,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      return data.summary || 'خلاصه سوابق آماده نشد.';
+    } catch (err) {
+      console.warn('Summarize error:', err);
+      return 'خطا در خلاصه‌سازی سوابق.';
+    }
+  }
+
+  // Test Gemini API Key
+  static async testApiKey(apiKey: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await fetch('/api/ai/test-key', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, records }),
+        body: JSON.stringify({ apiKey }),
       });
       const data = await response.json();
-      return data.summary || 'خلاصه آماده نشد.';
-    } catch (err) {
-      console.error('Summarize error:', err);
-      return 'خطا در خلاصه‌سازی سوابق.';
+      return {
+        success: !!data.success,
+        message: data.message || (data.success ? 'اتصال با موفقیت برقرار شد' : 'کلید نامعتبر است'),
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: 'خطا در اتصال به سرور: ' + (err?.message || ''),
+      };
     }
   }
 }
 
-// Persian Voice Recognition (Web Speech API)
+// Persian Voice Recognition (Web Speech API + MediaRecorder Fallback)
 export class VoiceRecognitionService {
   private static recognition: any = null;
 
@@ -153,7 +215,7 @@ export class VoiceRecognitionService {
     onEnd: () => void
   ): { stop: () => void } {
     if (!this.isSupported()) {
-      onError('مرورگر شما از ورودی صوتی پشتیبانی نمی‌کند.');
+      onError('مرورگر شما از ورودی صوتی مستقیم پشتیبانی نمی‌کند.');
       onEnd();
       return { stop: () => {} };
     }
@@ -161,7 +223,7 @@ export class VoiceRecognitionService {
     try {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       const rec = new SpeechRecognition();
-      rec.lang = 'fa-IR'; // Persian language recognition
+      rec.lang = 'fa-IR';
       rec.continuous = true;
       rec.interimResults = true;
 
@@ -188,9 +250,9 @@ export class VoiceRecognitionService {
         if (event.error === 'not-allowed') {
           onError('دسترسی به میکروفون داده نشد. لطفاً در تنظیمات مرورگر اجازه دهید.');
         } else if (event.error === 'no-speech') {
-          // No speech detected, ignore
+          // silence
         } else {
-          onError(`خطا در دریافت صدا: ${event.error}`);
+          onError(`پیام سیستم صوتی: ${event.error}`);
         }
       };
 

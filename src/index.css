@@ -1,5 +1,18 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-primary: #7C9070;
+  --color-primary-hover: #6B7D60;
+  --color-background: var(--bg-natural);
+  --color-card: var(--bg-card);
+  --color-foreground: var(--color-text-main);
+  --color-muted: var(--bg-tint);
+  --color-muted-foreground: var(--color-text-muted);
+  --color-border: var(--border-sand);
+}
+
 @layer base {
   :root {
     --bg-natural: #FDFCF9;

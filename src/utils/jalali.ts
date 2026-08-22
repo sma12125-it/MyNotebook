@@ -196,9 +196,86 @@ export function formatTimeFa(timeStr: string): string {
   return toFaDigits(timeStr);
 }
 
+// Get Current Time formatted as "HH:MM" (e.g. "14:35")
+export function getCurrentTime(): string {
+  const now = new Date();
+  const hours = now.getHours().toString().padStart(2, '0');
+  const minutes = now.getMinutes().toString().padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
+// Get Current Time formatted in Persian digits
+export function getCurrentTimeFa(): string {
+  return toFaDigits(getCurrentTime());
+}
+
+// Format both Jalali Date and Time: e.g. "۲۶ مرداد ۱۴۰۵ - ۱۴:۳۵"
+export function formatDateTimeFa(dateJalali?: string, timeStr?: string): string {
+  if (!dateJalali) return '';
+  const dateFormatted = formatJalaliReadable(dateJalali);
+  if (!timeStr) return dateFormatted;
+  return `${dateFormatted} - ساعت ${toFaDigits(timeStr)}`;
+}
+
 // Format Currency in Tomans: "۴۵۰,۰۰۰ تومان"
 export function formatToman(amount: number | null | undefined): string {
   if (amount === undefined || amount === null) return '';
   const formatted = amount.toLocaleString('en-US');
   return `${toFaDigits(formatted)} تومان`;
 }
+
+// Add days to Jalali Date string ("1405/05/20" + 28 -> "1405/06/17")
+export function addDaysToJalali(jalaliStr: string, daysToAdd: number): string {
+  try {
+    const clean = toEnDigits(jalaliStr);
+    const parts = clean.split('/');
+    if (parts.length < 3) return jalaliStr;
+    const jy = parseInt(parts[0], 10);
+    const jm = parseInt(parts[1], 10);
+    const jd = parseInt(parts[2], 10);
+    const [gy, gm, gd] = jalaliToGregorian(jy, jm, jd);
+    const date = new Date(gy, gm - 1, gd);
+    date.setDate(date.getDate() + daysToAdd);
+    const [newJy, newJm, newJd] = gregorianToJalali(date.getFullYear(), date.getMonth() + 1, date.getDate());
+    const mm = newJm.toString().padStart(2, '0');
+    const dd = newJd.toString().padStart(2, '0');
+    return `${newJy}/${mm}/${dd}`;
+  } catch {
+    return jalaliStr;
+  }
+}
+
+// Calculate Difference in Days between two Jalali dates (date2 - date1)
+export function getDaysBetweenJalali(startJalali: string, endJalali: string): number {
+  try {
+    const clean1 = toEnDigits(startJalali).split('/');
+    const clean2 = toEnDigits(endJalali).split('/');
+    if (clean1.length < 3 || clean2.length < 3) return 0;
+    const [g1y, g1m, g1d] = jalaliToGregorian(parseInt(clean1[0], 10), parseInt(clean1[1], 10), parseInt(clean1[2], 10));
+    const [g2y, g2m, g2d] = jalaliToGregorian(parseInt(clean2[0], 10), parseInt(clean2[1], 10), parseInt(clean2[2], 10));
+    const d1 = new Date(g1y, g1m - 1, g1d);
+    const d2 = new Date(g2y, g2m - 1, g2d);
+    d1.setHours(0, 0, 0, 0);
+    d2.setHours(0, 0, 0, 0);
+    const diff = d2.getTime() - d1.getTime();
+    return Math.round(diff / (1000 * 60 * 60 * 24));
+  } catch {
+    return 0;
+  }
+}
+
+// Validate Jalali date string
+export function isValidJalaliDate(jalaliStr: string): boolean {
+  if (!jalaliStr) return false;
+  const clean = toEnDigits(jalaliStr).trim();
+  const parts = clean.split('/');
+  if (parts.length !== 3) return false;
+  const jy = parseInt(parts[0], 10);
+  const jm = parseInt(parts[1], 10);
+  const jd = parseInt(parts[2], 10);
+  if (isNaN(jy) || jy < 1300 || jy > 1500) return false;
+  if (isNaN(jm) || jm < 1 || jm > 12) return false;
+  if (isNaN(jd) || jd < 1 || jd > 31) return false;
+  return true;
+}
+

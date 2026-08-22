@@ -2,7 +2,8 @@
   "name": "دفتر من",
   "description": "سامانه مدیریت زندگی و سلامت شخصی (دفتر من) با پشتیبانی از خط زمانی، پرونده پزشکی، داروها، آزمایش‌ها، یادآوری‌های هوشمند، اسناد و ثبت صوتی/متنی با هوش مصنوعی.",
   "requestFramePermissions": [
-    "microphone"
+    "microphone",
+    "camera"
   ],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

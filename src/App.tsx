@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { AppState, TabType, UserProfile } from './types';
 import { StorageService } from './services/storage';
+import { CloudSyncService, SecurityConfig } from './services/cloudSync';
+import { User } from './services/firebase';
+import { AlarmManager, TriggeredAlarm } from './services/alarmManager';
+import { FullScreenAlarmModal } from './components/alarms/FullScreenAlarmModal';
 
 // Common Navigation & Shell Components
 import { Header } from './components/common/Header';
@@ -13,6 +17,8 @@ import { QuickCaptureModal } from './components/modals/QuickCaptureModal';
 import { AIAssistantDrawer } from './components/modals/AIAssistantDrawer';
 import { GlobalSearchModal } from './components/modals/GlobalSearchModal';
 import { OnboardingModal } from './components/modals/OnboardingModal';
+import { AppLockScreen } from './components/security/AppLockScreen';
+import { SecurityModal } from './components/security/SecurityModal';
 
 // Views
 import { HomeView } from './components/views/HomeView';
@@ -26,10 +32,48 @@ import { LifeEventsView } from './components/views/LifeEventsView';
 import { JournalView } from './components/views/JournalView';
 import { TimelineView } from './components/views/TimelineView';
 import { SettingsView } from './components/views/SettingsView';
+import { ProfileView } from './components/views/ProfileView';
+import { PeriodTrackingView } from './components/views/PeriodTrackingView';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('home');
   const [appState, setAppState] = useState<AppState>(() => StorageService.getAllState());
+
+  // Security & Cloud Sync State
+  const [securityConfig, setSecurityConfig] = useState<SecurityConfig>(() =>
+    CloudSyncService.getSecurityConfig()
+  );
+  const [isLocked, setIsLocked] = useState<boolean>(() => {
+    const config = CloudSyncService.getSecurityConfig();
+    return config.isLockEnabled;
+  });
+  const [currentUser, setCurrentUser] = useState<User | null>(() =>
+    CloudSyncService.getCurrentUser()
+  );
+  const [syncStatus, setSyncStatus] = useState<'synced' | 'syncing' | 'offline' | 'error'>('synced');
+  const [isSecurityModalOpen, setIsSecurityModalOpen] = useState(false);
+
+  // Theme reactive state
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const saved = localStorage.getItem('theme');
+    if (saved) return saved === 'dark';
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+
+  const toggleTheme = useCallback(() => {
+    setIsDarkMode((prev) => {
+      const next = !prev;
+      if (next) {
+        document.documentElement.classList.add('dark');
+        localStorage.setItem('theme', 'dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+        localStorage.setItem('theme', 'light');
+      }
+      return next;
+    });
+  }, []);
 
   // Modals state
   const [isQuickCaptureOpen, setIsQuickCaptureOpen] = useState(false);
@@ -37,6 +81,7 @@ export default function App() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
+  const [activeAlarm, setActiveAlarm] = useState<TriggeredAlarm | null>(null);
 
   // Refresh all state from Storage
   const refreshData = useCallback(() => {
@@ -44,31 +89,58 @@ export default function App() {
     setAppState(updated);
   }, []);
 
-  // Initial check for onboarding & theme
+  // Initialize Background Alarm & Alert Monitoring
   useEffect(() => {
-    // Check onboarding
+    AlarmManager.startMonitoring();
+    AlarmManager.registerListener((alarm) => {
+      setActiveAlarm(alarm);
+    });
+
+    const handleCustomAlarm = (e: any) => {
+      if (e.detail) {
+        setActiveAlarm(e.detail);
+      }
+    };
+
+    window.addEventListener('mylifeos_trigger_alarm', handleCustomAlarm);
+    return () => {
+      window.removeEventListener('mylifeos_trigger_alarm', handleCustomAlarm);
+      AlarmManager.stopMonitoring();
+    };
+  }, []);
+
+  // Initialize Cloud Sync & Auth Listener
+  useEffect(() => {
+    CloudSyncService.init((cloudState) => {
+      setAppState(cloudState);
+    });
+
+    const unsubscribe = CloudSyncService.onSyncStatusChange((status, user) => {
+      setSyncStatus(status);
+      setCurrentUser(user);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Initial check for onboarding & theme sync
+  useEffect(() => {
     if (!StorageService.isOnboardingCompleted()) {
       setIsOnboardingOpen(true);
     }
 
-    // Set saved theme if exists
-    const savedTheme = localStorage.getItem('theme');
-    if (
-      savedTheme === 'dark' ||
-      (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)
-    ) {
+    if (isDarkMode) {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
     }
 
-    // Register service worker for offline support if available
     if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
       navigator.serviceWorker.register('/sw.js').catch((err) => {
         console.log('SW registration note:', err);
       });
     }
-  }, []);
+  }, [isDarkMode]);
 
   // Global Keyboard Shortcuts (Cmd+K / Ctrl+K for search, Cmd+J for quick capture)
   useEffect(() => {
@@ -98,6 +170,14 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const handleLockNow = () => {
+    setIsLocked(true);
+  };
+
+  const handleUnlock = () => {
+    setIsLocked(false);
+  };
+
   return (
     <div className="min-h-screen bg-[#FDFCF9] dark:bg-[#161D15] text-[#3C3C3B] dark:text-[#E2E8DF] font-sans flex flex-col antialiased selection:bg-[#7C9070] selection:text-white" dir="rtl">
       {/* Top Header */}
@@ -108,6 +188,13 @@ export default function App() {
         onOpenAI={() => setIsAIAssistantOpen(true)}
         onOpenQuickCapture={() => setIsQuickCaptureOpen(true)}
         onNavigateToTab={handleNavigate}
+        onToggleDarkMode={toggleTheme}
+        isDarkMode={isDarkMode}
+        currentUser={currentUser}
+        syncStatus={syncStatus}
+        onOpenSecurity={() => setIsSecurityModalOpen(true)}
+        onLockApp={securityConfig.isLockEnabled ? handleLockNow : undefined}
+        isLockEnabled={securityConfig.isLockEnabled}
       />
 
       {/* Main Layout Container */}
@@ -126,6 +213,7 @@ export default function App() {
               appState={appState}
               onNavigateToTab={handleNavigate}
               onOpenQuickCapture={() => setIsQuickCaptureOpen(true)}
+              onOpenAI={() => setIsAIAssistantOpen(true)}
               onRefreshData={refreshData}
             />
           )}
@@ -202,6 +290,28 @@ export default function App() {
             <TimelineView
               appState={appState}
               onNavigateToTab={handleNavigate}
+              onRefreshData={refreshData}
+              onOpenQuickCapture={() => setIsQuickCaptureOpen(true)}
+            />
+          )}
+
+          {activeTab === 'profile' && (
+            <ProfileView
+              userProfile={appState.profile}
+              appState={appState}
+              onRefreshData={refreshData}
+              onNavigateToTab={handleNavigate}
+            />
+          )}
+
+          {activeTab === 'period' && (
+            <PeriodTrackingView
+              appState={appState}
+              periodData={appState.periodData}
+              userProfile={appState.profile}
+              onRefreshData={refreshData}
+              onNavigateToTab={handleNavigate}
+              onOpenQuickCapture={() => setIsQuickCaptureOpen(true)}
             />
           )}
 
@@ -210,6 +320,13 @@ export default function App() {
               userProfile={appState.profile}
               appState={appState}
               onRefreshData={refreshData}
+              isDarkMode={isDarkMode}
+              onToggleTheme={toggleTheme}
+              currentUser={currentUser}
+              securityConfig={securityConfig}
+              onOpenSecurity={() => setIsSecurityModalOpen(true)}
+              onLockNow={handleLockNow}
+              onNavigateToTab={handleNavigate}
             />
           )}
         </main>
@@ -257,11 +374,9 @@ export default function App() {
       <MoreMenuModal
         isOpen={isMoreMenuOpen}
         onClose={() => setIsMoreMenuOpen(false)}
+        onNavigate={handleNavigate}
         activeTab={activeTab}
-        onNavigate={(tab) => {
-          setIsMoreMenuOpen(false);
-          handleNavigate(tab);
-        }}
+        appState={appState}
       />
 
       {/* 5. First-time Onboarding Modal */}
@@ -269,6 +384,34 @@ export default function App() {
         isOpen={isOnboardingOpen}
         onComplete={handleCompleteOnboarding}
       />
+
+      {/* 6. Security & Cloud Account Modal */}
+      <SecurityModal
+        isOpen={isSecurityModalOpen}
+        onClose={() => setIsSecurityModalOpen(false)}
+        currentUser={currentUser}
+        securityConfig={securityConfig}
+        onUpdateSecurity={(newConfig) => setSecurityConfig(newConfig)}
+        onLockNow={() => {
+          setIsSecurityModalOpen(false);
+          handleLockNow();
+        }}
+      />
+
+      {/* 7. App Security Lock Screen */}
+      <AppLockScreen
+        isLocked={isLocked && securityConfig.isLockEnabled}
+        onUnlock={handleUnlock}
+        securityConfig={securityConfig}
+      />
+
+      {/* 8. Incoming Call-Style Full-Screen Alarm Modal */}
+      <FullScreenAlarmModal
+        alarm={activeAlarm}
+        onClose={() => setActiveAlarm(null)}
+        onRefreshData={refreshData}
+      />
     </div>
   );
 }
+

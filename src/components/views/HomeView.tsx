@@ -12,6 +12,7 @@ import {
   CalendarClock,
   Sparkles,
   FileText,
+  Droplet,
 } from 'lucide-react';
 import {
   UserProfile,
@@ -61,13 +62,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
   onNavigateToTab,
   onRefreshData,
 }) => {
-  const profile = propProfile || appState?.profile || { name: 'کاربر گرامی', darkMode: false, bloodType: 'A+' };
+  const profile = propProfile || appState?.profile || { name: 'کاربر گرامی', fullName: 'کاربر گرامی', darkMode: false, bloodType: 'A+' };
   const measurements = propMeasurements || appState?.vitals || [];
   const medications = propMedications || appState?.medications || [];
   const reminders = propReminders || appState?.reminders || [];
   const visits = propVisits || appState?.visits || [];
   const labs = propLabs || appState?.labs || [];
-  const events = propEvents || appState?.lifeEvents || [];
+  const events = propEvents || appState?.events || [];
 
   const today = getTodayJalali();
   const dateDisplay = getTodayFullPersian();
@@ -78,6 +79,32 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const latestDia = measurements.find((m) => m.type === 'blood_pressure_dia');
   const latestSleep = measurements.find((m) => m.type === 'sleep_hours');
   const latestHeartRate = measurements.find((m) => m.type === 'heart_rate');
+
+  // Water Intake Today
+  const todayWaterEntries = measurements.filter(
+    (m) => m.type === 'water_intake' && (m.recordedAtJalali === today || !m.recordedAtJalali)
+  );
+  const totalWaterToday = todayWaterEntries.reduce((acc, curr) => acc + (curr.value || 0), 0);
+  const waterGoal = 2000;
+  const waterProgress = Math.min(100, Math.round((totalWaterToday / waterGoal) * 100));
+
+  const handleQuickAddWaterHome = (amount: number) => {
+    const now = Date.now();
+    const currTime = new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+    StorageService.addMeasurement({
+      id: 'water-' + Math.random().toString(36).substring(2, 9),
+      type: 'water_intake',
+      value: amount,
+      unit: 'میلی‌لیتر',
+      recordedAtJalali: today,
+      recordedTime: currTime,
+      time: currTime,
+      timeJalali: currTime,
+      timestamp: now,
+      notes: `${toFaDigits(amount)} میلی‌لیتر آب`,
+    });
+    onRefreshData();
+  };
 
   // Today's active medications
   const activeMeds = medications.filter((m) => m.isActive);
@@ -389,6 +416,70 @@ export const HomeView: React.FC<HomeViewProps> = ({
             </div>
           </div>
         </div>
+      </div>
+
+      {/* ویجت مصرف آب روزانه (Daily Water Intake Tracker) */}
+      <div className="bg-[#FFFFFF] dark:bg-[#212B1F] p-5 rounded-3xl border border-[#E5E0D5] dark:border-[#2D3B2C] shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 flex items-center justify-center flex-shrink-0">
+              <Droplet className="w-5 h-5 fill-cyan-500/30" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-sm sm:text-base text-[#2D3A29] dark:text-[#E5EFE2]">مصرف آب امروز</h3>
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-600 dark:text-cyan-400">
+                  {toFaDigits(waterProgress)}٪ از هدف روزانه
+                </span>
+              </div>
+              <p className="text-xs text-[#8A8A87] dark:text-[#9BA598] mt-0.5">
+                مجموع: <span className="font-bold text-[#2D3A29] dark:text-[#E5EFE2]">{toFaDigits(totalWaterToday)}</span> از {toFaDigits(waterGoal)} میلی‌لیتر (حدود {toFaDigits(Math.round(totalWaterToday / 250))} لیوان)
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleQuickAddWaterHome(250)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 text-xs font-bold transition-all active:scale-95 cursor-pointer"
+              title="ثبت ۱ لیوان آب (۲۵۰ میلی‌لیتر) با ساعت دقیق الان"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>+۱ لیوان (۲۵۰ml)</span>
+            </button>
+            <button
+              onClick={() => handleQuickAddWaterHome(500)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-cyan-600 text-white hover:bg-cyan-700 text-xs font-bold transition-all active:scale-95 shadow-xs cursor-pointer"
+              title="ثبت ۱ بطری آب (۵۰۰ میلی‌لیتر) با ساعت دقیق الان"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>+۵۰۰ml</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Progress Bar */}
+        <div className="w-full bg-[#E5E0D5]/60 dark:bg-[#2D3B2C] h-3 rounded-full overflow-hidden mb-2">
+          <div
+            className="bg-gradient-to-r from-cyan-500 to-blue-500 h-full rounded-full transition-all duration-500 ease-out"
+            style={{ width: `${waterProgress}%` }}
+          ></div>
+        </div>
+
+        {/* Recent Water Intake entries today */}
+        {todayWaterEntries.length > 0 && (
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pt-2">
+            <span className="text-[11px] text-[#8A8A87] whitespace-nowrap">ثبت‌های امروز:</span>
+            {todayWaterEntries.map((w, idx) => (
+              <span
+                key={w.id || idx}
+                className="text-[11px] px-2.5 py-1 rounded-lg bg-[#FAF9F5] dark:bg-[#1C241B] border border-[#E5E0D5] dark:border-[#2C3A2A] text-[#5A5A58] dark:text-[#C2C9BE] whitespace-nowrap font-medium"
+              >
+                {toFaDigits(w.value)} ml {w.time || w.recordedTime ? `(ساعت ${toFaDigits(w.time || w.recordedTime || '')})` : ''}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* داروهای امروز (Today's Medications) */}

@@ -9,8 +9,11 @@ import {
   BookOpen,
   Settings,
   X,
+  Sparkles,
+  User,
 } from 'lucide-react';
-import { ActiveTab, TabType } from '../../types';
+import { ActiveTab, TabType, AppState } from '../../types';
+import { StorageService } from '../../services/storage';
 
 interface MoreMenuModalProps {
   isOpen: boolean;
@@ -18,6 +21,7 @@ interface MoreMenuModalProps {
   onSelectTab?: (tab: ActiveTab) => void;
   onNavigate?: (tab: TabType) => void;
   activeTab?: ActiveTab | TabType;
+  appState?: AppState;
 }
 
 export const MoreMenuModal: React.FC<MoreMenuModalProps> = ({
@@ -25,18 +29,26 @@ export const MoreMenuModal: React.FC<MoreMenuModalProps> = ({
   onClose,
   onSelectTab,
   onNavigate,
+  appState,
 }) => {
   if (!isOpen) return null;
 
+  const currentProfile = appState?.profile || StorageService.getProfile();
+  const isFemale = currentProfile?.gender === 'female';
+
   const items: Array<{ id: TabType; label: string; desc: string; icon: React.ComponentType<{ className?: string }>; color: string }> = [
-    { id: 'health', label: 'سلامت و سنجش‌ها', desc: 'فشار، وزن، ضربان و پروفایل سلامت', icon: Heart, color: 'bg-[#D97B7B]/15 text-[#D97B7B]' },
+    { id: 'health', label: 'سلامت و سنجش‌ها', desc: 'فشار، وزن، قند، ضربان و نمودارها', icon: Heart, color: 'bg-[#D97B7B]/15 text-[#D97B7B]' },
+    ...(isFemale
+      ? ([{ id: 'period', label: 'چرخه پریود و قاعدگی', desc: 'رهگیری چرخه، علائم و پیش‌بینی موعد', icon: Sparkles, color: 'bg-rose-500/15 text-rose-600 dark:text-rose-400' }] as const)
+      : []),
+    { id: 'profile', label: 'شناسنامه و سلامت فردی', desc: 'اطلاعات هویتی، بیومتریک و مخاطب اضطراری', icon: User, color: 'bg-[#7C9070]/15 text-[#7C9070]' },
     { id: 'medications', label: 'داروها', desc: 'زمان‌بندی مصرف و هشدار پایان دارو', icon: Pill, color: 'bg-[#7C9070]/15 text-[#7C9070]' },
     { id: 'doctors', label: 'پزشکان و ویزیت‌ها', desc: 'دفترچه پزشکان، نسخه‌ها و ویزیت‌ها', icon: UserCheck, color: 'bg-[#4A5D45]/15 text-[#4A5D45] dark:text-[#A8BCA2]' },
     { id: 'labs', label: 'آزمایش‌ها', desc: 'نتایج آزمایشگاهی و مقایسه دوره‌ای', icon: FlaskConical, color: 'bg-[#5B7082]/15 text-[#5B7082] dark:text-[#8FA7BC]' },
     { id: 'documents', label: 'مدارک و اسناد', desc: 'گاوصندوق اسناد پزشکی و شخصی', icon: FileText, color: 'bg-[#E5B58E]/20 text-[#C4804E]' },
     { id: 'events', label: 'رویدادها و هزینه‌ها', desc: 'خودرو، خانه، تعمیرات و سفرها', icon: Calendar, color: 'bg-[#7C9070]/15 text-[#7C9070]' },
     { id: 'journal', label: 'یادداشت روزانه', desc: 'ثبت حال عمومی، انرژی و افکار روز', icon: BookOpen, color: 'bg-[#8A8A87]/15 text-[#5A5A58] dark:text-[#C2C9BE]' },
-    { id: 'settings', label: 'تنظیمات و پشتیبان', desc: 'خروجی اکسل/JSON و مدیریت داده‌ها', icon: Settings, color: 'bg-[#4A5D45]/15 text-[#4A5D45] dark:text-[#A8BCA2]' },
+    { id: 'settings', label: 'تنظیمات و پشتیبان', desc: 'هوش مصنوعی، قفل امنیتی و خروجی داده‌ها', icon: Settings, color: 'bg-[#4A5D45]/15 text-[#4A5D45] dark:text-[#A8BCA2]' },
   ];
 
   const handleSelect = (tab: TabType) => {

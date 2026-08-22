@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Sparkles,
@@ -8,13 +8,22 @@ import {
   User,
   ShieldCheck,
   FileText,
+  Mic,
+  MicOff,
+  CornerDownLeft,
+  Volume2,
+  RefreshCw,
+  Zap,
 } from 'lucide-react';
-import { AIService } from '../../services/aiService';
+import { AIService, VoiceRecognitionService } from '../../services/aiService';
 import { StorageService } from '../../services/storage';
+import { AppState, UserProfile } from '../../types';
 
 interface AIAssistantDrawerProps {
   isOpen: boolean;
   onClose: () => void;
+  appState?: AppState;
+  onOpenQuickCapture?: () => void;
 }
 
 interface Message {
@@ -27,34 +36,52 @@ interface Message {
 export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({
   isOpen,
   onClose,
+  appState,
 }) => {
+  const profile = appState?.profile || StorageService.getProfile();
+  const userName = profile?.fullName?.trim() || profile?.name?.trim() || 'کاربر گرامی';
+  const customApiKey = StorageService.getCustomApiKey();
+
   const [messages, setMessages] = useState<Message[]>([
     {
       id: 'welcome',
       sender: 'ai',
-      text: 'سلام! من دستیار هوشمند شما در «دفتر من» هستم. می‌توانید هر سوالی درباره داروها، آزمایش‌ها، یادآوری‌ها و سوابق ثبت‌شده‌تان دارید بپرسید یا درخواست خلاصه پرونده کنید.',
+      text: `سلام ${userName}! من دستیار هوشمند و همنشین صمیمی شما در «دفتر من» هستم. به تمامی اطلاعات ثبت‌شده (داروها، آزمایش‌ها، مصرف آب، فشار و قند خون، ویزیت‌ها، هزینه‌های خودرو و یادآوری‌ها) دسترسی دارم و با سرعت بالا به هر سوال شما دقیق پاسخ می‌دهم. چه کمکی می‌تونم بهتون بکنم؟`,
       timestamp: Date.now(),
     },
   ]);
   const [inputQuestion, setInputQuestion] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [activeTab, setActiveTab] = useState<'chat' | 'summary'>('chat');
   const [summaryText, setSummaryText] = useState<string | null>(null);
   const [isSummarizing, setIsSummarizing] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const voiceListenerRef = useRef<{ stop: () => void } | null>(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isLoading]);
 
   if (!isOpen) return null;
 
   const quickPrompts = [
+    'امروز چقدر آب خوردم؟',
+    'آخرین فشار خون ثبت‌شده من چقدر بود؟',
+    'لیست داروهای فعال و دوز آن‌ها چیست؟',
     'آخرین بار کی آزمایش خون دادم؟',
-    'داروهای فعلی من چی هستند؟',
-    'آخرین وزن ثبت شده من چقدر است؟',
-    'چه یادآوری‌هایی این ماه دارم؟',
-    'فشار خون من در آخرین اندازه‌گیری چند بود؟',
+    'هزینه‌های ثبت‌شده ماشین چقدر بوده؟',
+    'یادآوری‌های فعال امروز من چیست؟',
   ];
 
   const handleSend = async (textToSend?: string) => {
     const query = (textToSend || inputQuestion).trim();
     if (!query || isLoading) return;
+
+    if (isRecording && voiceListenerRef.current) {
+      voiceListenerRef.current.stop();
+      setIsRecording(false);
+    }
 
     const userMsg: Message = {
       id: 'u-' + Date.now(),
@@ -83,12 +110,39 @@ export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({
         {
           id: 'err-' + Date.now(),
           sender: 'ai',
-          text: 'متأسفانه در دریافت پاسخ خطایی رخ داد. لطفاً مجدداً امتحان کنید.',
+          text: 'متأسفانه در برقراری ارتباط خطایی رخ داد. لطفاً دوباره سوال خود را مطرح نمایید.',
           timestamp: Date.now(),
         },
       ]);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const toggleVoiceRecording = () => {
+    if (isRecording) {
+      if (voiceListenerRef.current) {
+        voiceListenerRef.current.stop();
+      }
+      setIsRecording(false);
+    } else {
+      setIsRecording(true);
+      const listener = VoiceRecognitionService.startListening(
+        (transcript, isFinal) => {
+          setInputQuestion(transcript);
+          if (isFinal) {
+            handleSend(transcript);
+          }
+        },
+        (errorMsg) => {
+          console.warn('Voice error:', errorMsg);
+          setIsRecording(false);
+        },
+        () => {
+          setIsRecording(false);
+        }
+      );
+      voiceListenerRef.current = listener;
     }
   };
 
@@ -119,49 +173,60 @@ export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/50 backdrop-blur-xs animate-in fade-in">
-      <div className="w-full max-w-lg bg-white dark:bg-slate-900 h-full shadow-2xl flex flex-col border-r border-slate-200 dark:border-slate-800 animate-in slide-in-from-left duration-300">
+    <div className="fixed inset-0 z-100 flex justify-end bg-black/60 backdrop-blur-xs animate-in fade-in select-none" dir="rtl">
+      <div className="w-full max-w-lg bg-card text-card-foreground h-full shadow-2xl flex flex-col border-l border-border animate-in slide-in-from-left duration-300">
         
         {/* Header */}
-        <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between safe-top">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-sm shadow-indigo-500/25">
+        <div className="p-4 border-b border-border flex items-center justify-between bg-card">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-primary to-emerald-600 flex items-center justify-center text-white shadow-md shadow-primary/25">
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-slate-900 dark:text-white text-base">دستیار هوشمند دفتر من</h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">پاسخ بر اساس اطلاعات ثبت‌شده شما</p>
+              <div className="flex items-center gap-2">
+                <h3 className="font-extrabold text-foreground text-base">دستیار هوشمند دفتر من</h3>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                  customApiKey.trim()
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                    : 'bg-teal-500/10 text-teal-600 dark:text-teal-400 border-teal-500/20'
+                }`}>
+                  {customApiKey.trim() ? '✨ کلید ابری Gemini' : '⚡ موتور محلی فوق‌سریع'}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">پاسخ‌گویی آنی و هوشمند به همه اطلاعات شما</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+            className="p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Tab switch: Chat vs Summarizer */}
-        <div className="flex p-2 bg-slate-100 dark:bg-slate-800/80 mx-4 mt-3 rounded-xl text-xs font-semibold">
+        <div className="flex p-1.5 bg-muted mx-4 mt-3 rounded-2xl text-xs font-bold">
           <button
             onClick={() => setActiveTab('chat')}
-            className={`flex-1 py-1.5 rounded-lg transition-all ${
+            className={`flex-1 py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
               activeTab === 'chat'
-                ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                : 'text-slate-600 dark:text-slate-400'
+                ? 'bg-card text-foreground shadow-xs'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
           >
-            گفتگو و پرسش
+            <Bot className="w-4 h-4" />
+            <span>گفتگو و پرسش</span>
           </button>
           <button
             onClick={() => setActiveTab('summary')}
-            className={`flex-1 py-1.5 rounded-lg transition-all ${
+            className={`flex-1 py-2 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
               activeTab === 'summary'
-                ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                : 'text-slate-600 dark:text-slate-400'
+                ? 'bg-card text-foreground shadow-xs'
+                : 'text-muted-foreground hover:text-foreground'
             }`}
           >
-            خلاصه‌ساز پرونده
+            <FileText className="w-4 h-4" />
+            <span>خلاصه‌ساز پرونده</span>
           </button>
         </div>
 
@@ -169,7 +234,7 @@ export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({
         {activeTab === 'chat' ? (
           <div className="flex-1 flex flex-col justify-between overflow-hidden p-4">
             {/* Messages List */}
-            <div className="flex-1 overflow-y-auto space-y-3.5 pr-1">
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1 pl-1">
               {messages.map((msg) => (
                 <div
                   key={msg.id}
@@ -178,20 +243,20 @@ export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({
                   }`}
                 >
                   <div
-                    className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 text-xs ${
+                    className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-xs shadow-xs ${
                       msg.sender === 'user'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300'
+                        ? 'bg-primary text-white'
+                        : 'bg-primary/10 text-primary'
                     }`}
                   >
                     {msg.sender === 'user' ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
                   </div>
 
                   <div
-                    className={`p-3.5 rounded-2xl text-xs sm:text-sm leading-relaxed max-w-[85%] ${
+                    className={`p-4 rounded-2xl text-xs sm:text-sm leading-relaxed max-w-[85%] shadow-xs ${
                       msg.sender === 'user'
-                        ? 'bg-blue-600 text-white rounded-tr-xs'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 rounded-tl-xs whitespace-pre-line'
+                        ? 'bg-primary text-white rounded-tr-xs'
+                        : 'bg-muted/70 text-foreground border border-border/50 rounded-tl-xs whitespace-pre-line'
                     }`}
                   >
                     {msg.text}
@@ -200,21 +265,22 @@ export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({
               ))}
 
               {isLoading && (
-                <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 text-xs p-2">
+                <div className="flex items-center gap-2.5 text-primary text-xs p-3 rounded-2xl bg-primary/5 w-fit border border-primary/15 animate-pulse">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>دستیار در حال بررسی سوابق شما...</span>
+                  <span className="font-semibold">دستیار در حال تحلیل سوابق و نگارش پاسخ...</span>
                 </div>
               )}
+              <div ref={messagesEndRef} />
             </div>
 
             {/* Quick Prompts Chips */}
-            <div className="pt-2 pb-1 overflow-x-auto no-scrollbar flex items-center gap-1.5">
+            <div className="pt-2 pb-1.5 overflow-x-auto no-scrollbar flex items-center gap-1.5">
               {quickPrompts.map((prompt, idx) => (
                 <button
                   key={idx}
                   onClick={() => handleSend(prompt)}
                   disabled={isLoading}
-                  className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/60 text-slate-700 dark:text-slate-300 text-[11px] whitespace-nowrap border border-slate-200/60 dark:border-slate-700 transition-colors flex-shrink-0 font-medium"
+                  className="px-3 py-1.5 rounded-xl bg-muted hover:bg-primary/10 hover:text-primary text-muted-foreground text-xs whitespace-nowrap border border-border/70 transition-all shrink-0 font-medium cursor-pointer"
                 >
                   {prompt}
                 </button>
@@ -230,70 +296,76 @@ export const AIAssistantDrawer: React.FC<AIAssistantDrawerProps> = ({
                 }}
                 className="flex items-center gap-2"
               >
-                <input
-                  type="text"
-                  value={inputQuestion}
-                  onChange={(e) => setInputQuestion(e.target.value)}
-                  placeholder="پرسش خود را بنویسید..."
-                  disabled={isLoading}
-                  className="flex-1 p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-                />
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    value={inputQuestion}
+                    onChange={(e) => setInputQuestion(e.target.value)}
+                    placeholder="پرسش خود را بنویسید یا بگویید..."
+                    disabled={isLoading}
+                    className="w-full pl-10 pr-4 py-3 rounded-2xl border border-border bg-muted/40 text-foreground text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:bg-background transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={toggleVoiceRecording}
+                    className={`absolute left-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-xl transition-all cursor-pointer ${
+                      isRecording
+                        ? 'bg-rose-500 text-white animate-pulse shadow-md shadow-rose-500/30'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                    }`}
+                    title={isRecording ? 'توقف ضبط صدا' : 'صحبت با میکروفون'}
+                  >
+                    {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                  </button>
+                </div>
+
                 <button
                   type="submit"
                   disabled={!inputQuestion.trim() || isLoading}
-                  className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white shadow-sm transition-all flex items-center justify-center"
+                  className="p-3 rounded-2xl bg-primary hover:bg-[#687a5e] disabled:opacity-40 text-white shadow-md shadow-primary/20 transition-all flex items-center justify-center shrink-0 cursor-pointer"
                 >
                   <Send className="w-4 h-4 rotate-180" />
                 </button>
               </form>
-
-              <div className="flex items-center gap-1 mt-2 text-[10px] text-slate-500 dark:text-slate-400 justify-center">
-                <ShieldCheck className="w-3 h-3 text-emerald-500" />
-                <span>اطلاعات شما در دستگاه شما محفوظ است و برای آموزش مدل استفاده نمی‌شود.</span>
-              </div>
             </div>
           </div>
         ) : (
           /* Summarizer View */
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            <div className="p-3.5 bg-indigo-50 dark:bg-indigo-950/40 rounded-2xl border border-indigo-100 dark:border-indigo-900/50 text-xs text-indigo-900 dark:text-indigo-200 leading-relaxed">
-              تولید خلاصه منسجم برای ارائه به پزشک در هنگام ویزیت، یا مرور سریع آزمایش‌ها و رویدادها.
-            </div>
+            <p className="text-xs text-muted-foreground">
+              دسته‌بندی مورد نظر را انتخاب کنید تا خلاصه‌ای هوشمند از پرونده شما آماده شود:
+            </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <button
-                onClick={() => handleGenerateSummary('سوابق سلامت و ویزیت‌ها')}
-                disabled={isSummarizing}
-                className="p-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-right transition-colors"
-              >
-                <FileText className="w-4 h-4 text-indigo-600 mb-1" />
-                <div className="font-bold text-xs text-slate-900 dark:text-white">خلاصه سلامت و ویزیت‌ها</div>
-                <div className="text-[10px] text-slate-500 mt-0.5">برای ارائه به پزشک</div>
-              </button>
-
-              <button
-                onClick={() => handleGenerateSummary('سوابق آزمایشگاهی')}
-                disabled={isSummarizing}
-                className="p-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-right transition-colors"
-              >
-                <FileText className="w-4 h-4 text-purple-600 mb-1" />
-                <div className="font-bold text-xs text-slate-900 dark:text-white">خلاصه آزمایش‌ها</div>
-                <div className="text-[10px] text-slate-500 mt-0.5">روند ویتامین D، قند و چربی</div>
-              </button>
+            <div className="grid grid-cols-1 gap-2.5">
+              {[
+                { title: 'سوابق سلامت و ویزیت‌ها', desc: 'ویزیت پزشکان، سنجش‌ها و داروها' },
+                { title: 'سوابق آزمایشگاهی', desc: 'فاکتورهای آزمایش خون و چکاپ‌ها' },
+                { title: 'سوابق خودرو و هزینه‌ها', desc: 'سرویس‌های انجام شده، بیمه و هزینه‌ها' },
+              ].map((item, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => handleGenerateSummary(item.title)}
+                  disabled={isSummarizing}
+                  className="p-3.5 rounded-2xl bg-muted/50 hover:bg-muted border border-border flex items-center justify-between text-right transition-all cursor-pointer"
+                >
+                  <div>
+                    <h4 className="text-xs sm:text-sm font-bold text-foreground">{item.title}</h4>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">{item.desc}</p>
+                  </div>
+                  <Sparkles className="w-4 h-4 text-primary shrink-0" />
+                </button>
+              ))}
             </div>
 
             {isSummarizing && (
-              <div className="flex items-center justify-center gap-2 p-8 text-xs text-indigo-600 font-semibold">
+              <div className="flex items-center justify-center gap-2 p-6 text-primary text-xs font-semibold">
                 <Loader2 className="w-5 h-5 animate-spin" />
-                <span>در حال آماده‌سازی خلاصه هوشمند...</span>
+                <span>در حال تولید خلاصه هوشمند پرونده...</span>
               </div>
             )}
 
             {summaryText && !isSummarizing && (
-              <div className="p-4 bg-slate-50 dark:bg-slate-800/90 rounded-2xl border border-slate-200 dark:border-slate-700 text-xs sm:text-sm text-slate-800 dark:text-slate-100 whitespace-pre-line leading-relaxed">
-                <div className="font-bold text-indigo-600 dark:text-indigo-400 mb-2 border-b border-slate-200 dark:border-slate-700 pb-1.5">
-                  خلاصه آماده‌شده:
-                </div>
+              <div className="p-4 rounded-2xl bg-muted/60 border border-border text-xs sm:text-sm leading-relaxed text-foreground whitespace-pre-line animate-in fade-in">
                 {summaryText}
               </div>
             )}

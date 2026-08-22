@@ -40,8 +40,13 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
         <div className="flex-1 flex flex-col items-center justify-center py-2">
           {step === 1 && (
             <div className="space-y-4 animate-in fade-in">
-              <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white mx-auto shadow-lg shadow-blue-500/30 text-3xl font-extrabold">
-                د
+              <div className="w-20 h-20 rounded-3xl overflow-hidden shadow-lg shadow-emerald-500/20 mx-auto border-2 border-emerald-500/30 bg-[#7C9070]">
+                <img
+                  src="/app-logo.png"
+                  alt="دفتر من"
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
               </div>
               <h2 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
                 دفتر من

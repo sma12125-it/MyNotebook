@@ -14,6 +14,8 @@ import {
   CalendarDays,
   Settings,
   PlusCircle,
+  Sparkles,
+  User,
 } from 'lucide-react';
 import { ActiveTab, TabType, AppState } from '../../types';
 
@@ -46,9 +48,14 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
       ? appState.reminders.filter((r) => !r.isCompleted).length
       : 0;
 
+  const isFemale = appState?.profile?.gender === 'female';
+
   const menuItems: Array<{ id: TabType; label: string; icon: React.ComponentType<{ className?: string }>; color: string; badge?: number }> = [
     { id: 'home', label: 'خانه', icon: Home, color: 'text-[#7C9070]' },
     { id: 'health', label: 'سلامت و سنجش‌ها', icon: Heart, color: 'text-[#D97B7B]' },
+    ...(isFemale
+      ? ([{ id: 'period', label: 'چرخه پریود و قاعدگی', icon: Sparkles, color: 'text-rose-500' }] as const)
+      : []),
     { id: 'medications', label: 'داروها', icon: Pill, color: 'text-[#7C9070]' },
     { id: 'doctors', label: 'پزشکان و ویزیت‌ها', icon: UserCheck, color: 'text-[#4A5D45]' },
     { id: 'labs', label: 'آزمایش‌ها', icon: FlaskConical, color: 'text-[#5B7082]' },
@@ -57,6 +64,7 @@ export const DesktopSidebar: React.FC<DesktopSidebarProps> = ({
     { id: 'events', label: 'رویدادها و هزینه‌ها', icon: Calendar, color: 'text-[#7C9070]' },
     { id: 'journal', label: 'یادداشت روزانه', icon: BookOpen, color: 'text-[#8A8A87]' },
     { id: 'timeline', label: 'خط زمانی (Timeline)', icon: Clock, color: 'text-[#4A5D45]' },
+    { id: 'profile', label: 'شناسنامه سلامت', icon: User, color: 'text-primary' },
     { id: 'settings', label: 'تنظیمات و پشتیبان', icon: Settings, color: 'text-[#8A8A87]' },
   ];
 

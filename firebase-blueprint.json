@@ -1,0 +1,59 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile, biometric/lock preferences, and health summary",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 128 },
+        "fullName": { "type": "string", "maxLength": 100 },
+        "name": { "type": "string", "maxLength": 100 },
+        "birthDateJalali": { "type": "string", "maxLength": 20 },
+        "bloodGroup": { "type": "string", "maxLength": 10 },
+        "bloodType": { "type": "string", "maxLength": 10 },
+        "heightCm": { "type": "number" },
+        "weightKg": { "type": "number" },
+        "allergies": { "type": "string", "maxLength": 1000 },
+        "medicalConditions": { "type": "string", "maxLength": 1000 },
+        "emergencyContact": { "type": "string", "maxLength": 50 },
+        "emergencyContactPhone": { "type": "string", "maxLength": 30 },
+        "securityPin": { "type": "string", "maxLength": 64 },
+        "securityPattern": { "type": "string", "maxLength": 64 },
+        "biometricEnabled": { "type": "boolean" },
+        "darkMode": { "type": "boolean" },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["userId"]
+    },
+    "UserData": {
+      "title": "UserData",
+      "description": "All data collections belonging to a specific user",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "measurements": { "type": "string" },
+        "medications": { "type": "string" },
+        "visits": { "type": "string" },
+        "labs": { "type": "string" },
+        "reminders": { "type": "string" },
+        "events": { "type": "string" },
+        "journal": { "type": "string" },
+        "documents": { "type": "string" },
+        "doctors": { "type": "string" },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["userId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Stores user profile and security lock settings"
+    },
+    "/users/{userId}/data/records": {
+      "schema": "UserData",
+      "description": "Stores synchronized health, medication, reminders and lifestyle records for the user"
+    }
+  }
+}
